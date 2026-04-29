@@ -127,12 +127,31 @@ app.post('/api/login', async (req, res) => {
         const token = jwt.sign(
             { id: rows[0].id, usuario: rows[0].usuario },
             JWT_SECRET,
-            { expiresIn: '8h' }
+            { expiresIn: '1h' }
         )
         res.json({ token, usuario: rows[0].usuario })
     } catch (err) {
         console.error('Error en login:', err.message)
         res.status(500).json({ error: 'Error del servidor', detalle: err.message })
+    }
+})
+
+// ══════════════════════════════════════════════════════════════════════════
+// RUTA para regenerar el hash del admin (usar una sola vez si hay problemas)
+// GET http://localhost:4000/api/reset-admin
+// Después de usarla, comenta o elimina esta ruta
+// ══════════════════════════════════════════════════════════════════════════
+app.get('/api/reset-admin', async (req, res) => {
+    try {
+        const hash = await bcrypt.hash('Giecom123', 10)
+        await db.query('DELETE FROM usuarios WHERE usuario = ?', ['AdminGiecom'])
+        await db.query(
+            'INSERT INTO usuarios (usuario, password) VALUES (?, ?)',
+            ['AdminGiecom', hash]
+        )
+        res.json({ ok: true, mensaje: 'Usuario AdminGiecom recreado correctamente' })
+    } catch (err) {
+        res.status(500).json({ error: err.message })
     }
 })
 
@@ -208,6 +227,70 @@ app.delete('/api/miembros/:id', authMiddleware, async (req, res) => {
     } catch (err) {
         console.error('Error DELETE miembros:', err.message)
         res.status(500).json({ error: 'Error al eliminar miembro', detalle: err.message })
+    }
+})
+
+
+// ══════════════════════════════════════════════════════════════════════════
+// PROYECTOS
+// ══════════════════════════════════════════════════════════════════════════
+
+// GET /api/proyectos — público
+app.get('/api/proyectos', async (req, res) => {
+    try {
+        const [rows] = await db.query('SELECT * FROM proyectos ORDER BY año DESC, id DESC')
+        res.json(rows)
+    } catch (err) {
+        console.error('Error GET proyectos:', err.message)
+        res.status(500).json({ error: 'Error al obtener proyectos', detalle: err.message })
+    }
+})
+
+// POST /api/proyectos — protegido
+app.post('/api/proyectos', authMiddleware, async (req, res) => {
+    const { nombre, año, estado, informacion, link, icono } = req.body
+    if (!nombre || !año)
+        return res.status(400).json({ error: 'Nombre y año son obligatorios' })
+    try {
+        const [result] = await db.query(
+            'INSERT INTO proyectos (nombre, año, estado, informacion, link, icono) VALUES (?,?,?,?,?,?)',
+            [nombre, año, estado || 'En curso', informacion || null, link || null, icono || '💡']
+        )
+        const [rows] = await db.query('SELECT * FROM proyectos WHERE id = ?', [result.insertId])
+        res.status(201).json(rows[0])
+    } catch (err) {
+        console.error('Error POST proyectos:', err.message)
+        res.status(500).json({ error: 'Error al crear proyecto', detalle: err.message })
+    }
+})
+
+// PUT /api/proyectos/:id — protegido
+app.put('/api/proyectos/:id', authMiddleware, async (req, res) => {
+    const { nombre, año, estado, informacion, link, icono } = req.body
+    if (!nombre || !año)
+        return res.status(400).json({ error: 'Nombre y año son obligatorios' })
+    try {
+        await db.query(
+            'UPDATE proyectos SET nombre=?, año=?, estado=?, informacion=?, link=?, icono=? WHERE id=?',
+            [nombre, año, estado || 'En curso', informacion || null, link || null, icono || '💡', req.params.id]
+        )
+        const [rows] = await db.query('SELECT * FROM proyectos WHERE id = ?', [req.params.id])
+        if (rows.length === 0) return res.status(404).json({ error: 'No encontrado' })
+        res.json(rows[0])
+    } catch (err) {
+        console.error('Error PUT proyectos:', err.message)
+        res.status(500).json({ error: 'Error al actualizar proyecto', detalle: err.message })
+    }
+})
+
+// DELETE /api/proyectos/:id — protegido
+app.delete('/api/proyectos/:id', authMiddleware, async (req, res) => {
+    try {
+        await db.query('DELETE FROM proyectos WHERE id = ?', [req.params.id])
+        res.json({ ok: true })
+    } catch (err) {
+        console.error('Error DELETE proyectos:', err.message)
+        res.status(500).json({ error: 'Error al eliminar proyecto', detalle: err.message })
     }
 })
 
